@@ -135,6 +135,7 @@ main = do
     (_, _, err) -> do
       mapM_ (hPutStrLn stderr) err
       hPutStrLn stderr $ Opt.usageInfo ("Usage: " ++ prog ++ " OPTION\n\
-        \Ansible dynamic inventory from Warewulf node database")
+        \Ansible dynamic inventory from Warewulf node database\n\
+        \https://github.com/dylex/ansible-warewulf-inventory\n")
         options
       exitFailure
