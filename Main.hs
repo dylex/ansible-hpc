@@ -59,17 +59,25 @@ unDef :: String -> Maybe T.Text
 unDef "UNDEF" = Nothing
 unDef s = Just $ T.pack s
 
-data Node = Node
-  { nodeName :: !T.Text
-  , nodeId :: Int
-  , nodeCluster :: Maybe T.Text
-  , nodeDomain :: Maybe T.Text
-  , nodeGroups :: [T.Text]
-  , nodeEnabled :: Bool
-  , nodeNetDevs :: Map T.Text [(T.Text, T.Text)]
-  } deriving (Show)
+data Object
+  = Node
+    { objectName :: !T.Text
+    , objectId :: !Int
+    , nodeCluster :: Maybe T.Text
+    , nodeDomain :: Maybe T.Text
+    , nodeGroups :: [T.Text]
+    , nodeEnabled :: !Bool
+    , nodeNetDevs :: Map T.Text [(T.Text, T.Text)]
+    }
+  | VNFS
+    { objectName :: !T.Text
+    -- objectId :: !Int -- not included in wwsh vnfs list
+    , vnfsSize :: !Float
+    , vnfsPath :: !T.Text
+    }
+  deriving (Show)
 
-parseNode :: String -> [(T.Text, String)] -> Maybe Node
+parseNode :: String -> [(T.Text, String)] -> Maybe Object
 parseNode n d = Node (T.pack n)
   <$> (readMaybe =<< get "ID")
   <*> (unDef <$> get "CLUSTER")
@@ -85,44 +93,71 @@ parseNode n d = Node (T.pack n)
   netdev (T.split ('.'==) -> [i, k], unDef -> Just v) = Map.singleton i [(T.toLower k, v)]
   netdev _ = Map.empty
 
-parseNodes :: [String] -> [Node]
+parseNodes :: [String] -> [Object]
 parseNodes [] = []
 parseNodes (('#':'#':'#':'#':' ':(reverse -> '#':(dropWhile ('#'==) -> ' ':(reverse -> n))))
   : (mapMaybeWhile (splitEq <=< stripPrefix (n++": ") . dropWhile (' ' ==)) ->
     (parseNode n . map (first $ T.dropWhileEnd (' '==) . T.pack) -> Just a, r))) =
   a : parseNodes r
-parseNodes (s:_) = error $ "error parsing ww output at line: " ++ s
+parseNodes (s:_) = error $ "error parsing wwsh node output at line: " ++ s
 
-getNodes :: [String] -> IO [Node]
+getNodes :: [String] -> IO [Object]
 getNodes args = parseNodes . lines <$> readProcess "wwsh" ("node" : "print" : args) ""
 
-variables :: Node -> JSON.Value
+splitVNFS :: String -> Maybe (String, (Float, String))
+splitVNFS (' ':(reads -> [(z, ' ':(dropWhile (' '==) -> p@('/':_)))])) = return ([], (z, p))
+splitVNFS (c:r) = first (consStrip c) <$> splitVNFS r where
+  consStrip ' ' [] = []
+  consStrip h t = h : t
+splitVNFS [] = Nothing
+
+parseVNFS :: String -> Object
+parseVNFS (splitVNFS -> Just (unDef -> Just n, (z, unDef -> Just p))) = VNFS n z p
+parseVNFS s = error $ "error parsing wwsh vnfs output line: " ++ s
+
+parseVNFSs :: [String] -> [Object]
+parseVNFSs ((words -> ["VNFS", "NAME", "SIZE", "(M)", "CHROOT", "LOCATION"]):l) = map parseVNFS l
+parseVNFSs (s:_) = error $ "error parsing wwsh vnfs header: " ++ s
+parseVNFSs [] = []
+
+variables :: Object -> JSON.Value
 variables Node{..} = JSON.object
   $ maybeList ("warewulf_domain" JSON..=) nodeDomain
-  [ "warewulf_id" JSON..= nodeId
+  [ "warewulf_id" JSON..= objectId
   , "warewulf_netdevs" JSON..= Map.map (JSON.object . map (uncurry (JSON..=))) nodeNetDevs
   ]
+variables VNFS{..} = JSON.object
+  [ "warewulf_vnfs_size" JSON..= vnfsSize
+  , "ansible_host" JSON..= vnfsPath
+  , "ansible_connection" JSON..= ("chroot" :: T.Text)
+  ]
 
-groups :: Node -> [T.Text]
-groups Node{..} =
+memberships :: Object -> [T.Text]
+memberships Node{..} = "warewulf_node" :
   (if nodeEnabled then ("enabled" :) else id)
-  $ maybeList id nodeCluster $ nodeGroups
+  (maybeList id nodeCluster $ nodeGroups)
+memberships VNFS{} = ["warewulf_vnfs"]
+
+getVNFS :: [String] -> IO [Object]
+getVNFS args = parseVNFSs . lines <$> readProcess "wwsh" ("vnfs" : "list" : args) ""
+
+getObjects :: [String] -> IO [Object]
+getObjects args = (++) <$> getNodes args <*> getVNFS args
 
 run :: Option -> IO JSON.Value
 run OptionList = do
-  nl <- getNodes []
+  l <- getObjects []
   return $ JSON.Object
     $ Map.insert "_meta" (JSON.object
       [ "hostvars" JSON..= JSON.object
-        (map (\n -> nodeName n JSON..= variables n) nl)
+        (map (\n -> objectName n JSON..= variables n) l)
       ])
-    $ Map.insert "warewulf" (JSON.toJSON $ map nodeName nl)
-    $ Map.map JSON.toJSON $ mapUnion (\n -> Map.fromList $ map ((, [nodeName n])) $ groups n) nl
+    $ Map.map JSON.toJSON $ mapUnion (\n -> Map.fromList $ map ((, [objectName n])) $ memberships n) l
 run (OptionHost h) = do
-  nl <- getNodes [h]
-  case nl of
+  l <- getObjects [h]
+  case l of
     [] -> fail "No matching host"
-    [n] -> return $ variables n
+    [o] -> return $ variables o
     _ -> fail "Multiple matching hosts"
 
 main :: IO ()
