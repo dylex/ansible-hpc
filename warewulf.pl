@@ -60,6 +60,33 @@ sub to_hash($) {
   wantarray ? %$val : $val
 }
 
+sub deobj {
+  local $_ = shift;
+  if (ref =~ /^Warewulf::/) {
+    if ($_->isa('Warewulf::ObjectSet')) {
+      my @l = $_->get_list;
+      $_ = {};
+      for my $e (@l) {
+	$_->{$e->get('name')} = deobj($e);
+      }
+    } elsif ($_->isa('Warewulf::Object')) {
+      my %h = $_->get_hash;
+      $_ = {};
+      while (my ($k, $v) = each %h) {
+	$_->{lc $k} = deobj($v);
+      }
+    }
+  } elsif (ref eq 'ARRAY') {
+    $_ = [ map { deobj($_) } @$_ ];
+  } elsif (ref eq 'HASH') {
+    $_ = {%$_};
+    for (values %$_) {
+      $_ = deobj($_);
+    }
+  }
+  $_
+}
+
 sub prop {
   my ($obj, $prop, $args, $check) = @_;
   my $val = $args->{$prop};
@@ -105,7 +132,7 @@ sub netdev {
   my $netdev = $args->{$prop};
   my $netobj = $obj->netdevs($netdev);
   my $changed = 0;
-  unless ($netobj && $netobj->count) {
+  unless ($netobj) {
     if ($prop eq 'netadd') {
       return $check if $check;
       $obj->netdev_get_add($netdev);
@@ -215,43 +242,6 @@ my %CLASS = (
 );
 my @TYPES = keys %PROPS;
 
-sub match_objects($;$$) {
-  my ($match, $field, $action) = @_;
-  $field ||= 'name';
-  my(@objs, %objs);
-  push @objs, \%objs;
-  for my $type (@TYPES) {
-    next unless exists $match->{$type};
-    my $objs = $DS->get_objects($type, $field, to_array($match->{$type}));
-    $objs{$type} = $objs;
-    push @objs, $objs->get_list;
-  }
-  @objs
-}
-
-sub deobj {
-  local $_ = shift;
-  if (ref =~ /^Warewulf::/) {
-    if ($_->isa('Warewulf::ObjectSet')) {
-      $_ = [ map { deobj($_) } $_->get_list ];
-    } elsif ($_->isa('Warewulf::Object')) {
-      my %h = $_->get_hash;
-      $_ = {};
-      while (my ($k, $v) = each %h) {
-	$_->{lc $k} = deobj($v);
-      }
-    }
-  } elsif (ref eq 'ARRAY') {
-    $_ = [ map { deobj($_) } @$_ ];
-  } elsif (ref eq 'HASH') {
-    $_ = {%$_};
-    for (values %$_) {
-      $_ = deobj($_);
-    }
-  }
-  $_
-}
-
 my %DHCP = (
   'update' => 'persist',
   'persist' => 'persist',
@@ -284,14 +274,65 @@ sub pxe($$$) {
   Warewulf::Provision::Pxelinux->new->$op($obj->get_list) || JSON::true
 }
 
+sub match_objects($;$$) {
+  my ($match, $field, $action) = @_;
+  $field ||= 'name';
+  my(@objs, %objs);
+  push @objs, \%objs;
+  for my $type (@TYPES) {
+    next unless exists $match->{$type};
+    my $objs = $DS->get_objects($type, $field, to_array($match->{$type}));
+    $objs{$type} = $objs;
+    push @objs, $objs->get_list;
+  }
+  @objs
+}
+
 sub inventory_objects(;$) {
   my ($host) = (@_, '');
   match_objects { node => $host, vnfs => $host }
 }
 
+sub obj_vars($) {
+  my ($obj) = @_;
+  my %vars;
+  $vars{warewulf_type} = $obj->get('_type');
+  if ($obj->isa('Warewulf::Node')) {
+    $vars{warewulf_domain} = $obj->domain if $obj->domain;
+    $vars{warewulf_netdevs} = deobj($obj->netdevs);
+  } elsif ($obj->isa('Warewulf::Vnfs')) {
+    $vars{ansible_host} = $obj->chroot;
+    $vars{ansible_connection} = 'chroot';
+  }
+  wantarray ? %vars : \%vars
+}
+
+sub obj_groups($) {
+  my ($obj) = @_;
+  my @groups;
+  if ($obj->isa('Warewulf::Node')) {
+    push @groups, 'warewulf_node';
+    push @groups, 'enabled' if $obj->enabled;
+    push @groups, $obj->cluster if $obj->cluster;
+    push @groups, $obj->groups;
+  } elsif ($obj->isa('Warewulf::Vnfs')) {
+    push @groups, 'warewulf_vnfs';
+  }
+  wantarray ? @groups : \@groups
+}
+
+
 if      (@ARGV == 1 and $ARGV[0] eq '--list') {
   my ($objs, @objs) = inventory_objects;
-  # TODO
+  my %vars;
+  for my $obj (@objs) {
+    my $name = $obj->get('name');
+    $vars{$name} = obj_vars($obj);
+    for my $group (obj_groups($obj)) {
+      push @{$RES{$group}}, $name;
+    }
+  }
+  $RES{_meta} = { hostvars => \%vars };
 
 } elsif (@ARGV == 2 and $ARGV[0] eq '--host') {
   my $host = $ARGV[1];
@@ -299,7 +340,8 @@ if      (@ARGV == 1 and $ARGV[0] eq '--list') {
   my ($objs, @objs) = inventory_objects $host;
   die "No matching host: $host\n" unless @objs;
   die "Multiple matching hosts: $host\n" if $#objs;
-  # TODO
+  my ($obj) = @objs;
+  %RES = host_vars($obj);
 
 } elsif (@ARGV == 1 and -r $ARGV[0]) {
   my $args = read_json(@ARGV);
