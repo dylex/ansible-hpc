@@ -360,13 +360,14 @@ if      (@ARGV == 1 and $ARGV[0] eq '--list') {
   my $check = $args->{_ansible_check_mode};
   set_log_level($args->{_ansible_verbosity} || 0);
 
-  my ($objs, @objs) = match_objects($args, $args->{lookup});
+  my $lookup = $args->{lookup};
+  my ($objs, @objs) = match_objects($args, $lookup);
   if ($args->{new}) {
     while (my ($type, $obj) = each %$objs) {
       next if $obj->count;
       my $o = $CLASS{$type}->new;
       $o->set('_type', $type);
-      $o->name($args->{$type});
+      $o->$lookup($args->{$type});
       push @objs, $o;
     }
   }
