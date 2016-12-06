@@ -5,6 +5,7 @@
 use strict;
 use Data::Dumper;
 use JSON;
+use List::MoreUtils qw(any);
 use Warewulf::Bootstrap;
 use Warewulf::DSO::Bootstrap;
 use Warewulf::DSO::File;
@@ -30,7 +31,7 @@ sub data_eq($$) {
 
 sub elem($@) {
   my $e = shift;
-  grep { $_ eq $e } @_
+  any { $_ eq $e } @_
 }
 
 my $JSON = JSON->new->utf8->allow_blessed->convert_blessed->allow_unknown;
@@ -95,7 +96,7 @@ sub prop {
 sub prop_list {
   my ($obj, $prop, $args, $check) = @_;
   my @val = to_array($args->{$prop})
-    or die "$prop requires array\n";
+    or die "$prop requires array value\n";
   my @cur = $obj->$prop;
   return if data_eq(\@cur, \@val);
   return $check if $check;
@@ -110,9 +111,40 @@ sub prop_adddel {
   $base .= 's';
   my $sense = $addrm eq 'add';
   my @cur = $obj->$base;
-  return unless grep { $sense xor elem($_, @cur) } @val;
+  return unless any { $sense xor elem($_, @cur) } @val;
   return $check if $check;
   $obj->$prop(@val) || JSON::true
+}
+
+sub prop_bool {
+  my ($obj, $prop, $args, $check) = @_;
+  my $val = uc($args->{$prop});
+  if (elem($val, '1', 'true', 'yes')) {
+    $val = 1;
+  } elsif (elem($val, '0', 'false', 'no')) {
+    $val = 0;
+  } else {
+    die "$prop requires boolean value\n";
+  }
+  my $cur = $obj->$prop;
+  return unless $val xor $cur;
+  return $check if $check;
+  $obj->$prop($val) || JSON::true
+}
+
+sub prop_bootlocal {
+  my ($obj, $prop, $args, $check) = @_;
+  my $val = uc($args->{$prop});
+  if (elem($val, 'UNDEF', 'FALSE', 'NO', 'N', '0')) {
+    $val = 'UNDEF';
+  } elsif (not elem($val, 'EXIT', 'NORMAL')) {
+    die "$prop requires UNDEF, EXIT, or NORMAL\n";
+  }
+  my $cur = $obj->$prop;
+  $cur = defined $cur ? $cur ? "EXIT" : "NORMAL" : "UNDEF";
+  return if $cur eq $val;
+  return $check if $check;
+  $obj->$prop($val) || JSON::true
 }
 
 sub action {
@@ -171,7 +203,7 @@ my %PROPS = (
     netdev		=> \&netdev,
     netadd		=> \&netdev,
     netdel 		=> \&netdev,
-    enabled 		=> \&prop,
+    enabled 		=> \&prop_bool,
     # Provision:
     bootstrapid 	=> \&prop,
     vnfsid		=> \&prop,
@@ -182,11 +214,11 @@ my %PROPS = (
     fileidadd		=> \&prop_adddel,
     fileiddel		=> \&prop_adddel,
     master		=> \&prop_list,
-    postnetdown		=> \&prop,
-    preshell		=> \&prop,
-    postshell		=> \&prop,
+    postnetdown		=> \&prop_bool,
+    preshell		=> \&prop_bool,
+    postshell		=> \&prop_bool,
     selinux		=> \&prop,
-    bootlocal		=> \&prop, # TODO current value translation
+    bootlocal		=> \&prop_bootlocal,
     # Impi:
     ipmi_ipaddr		=> \&prop,
     ipmi_netmask	=> \&prop,
@@ -194,7 +226,7 @@ my %PROPS = (
     ipmi_password	=> \&prop,
     ipmi_uid		=> \&prop,
     ipmi_proto		=> \&prop,
-    ipmi_autoconfig	=> \&prop,
+    ipmi_autoconfig	=> \&prop_bool,
     ipmi		=> \&ipmi,
   },
   vnfs => {
@@ -357,8 +389,11 @@ if      (@ARGV == 1 and $ARGV[0] eq '--list') {
     exit 0;
   };
 
+  &set_log_target('SYSLOG:ansible-warewulf:' . ($args->{_ansible_syslog_facility} || 'USER'), 'ALL');
+  &set_log_target(\&CORE::die, 0, 1);
+  set_log_level(($args->{_ansible_verbosity} || 0) + 1);
+
   my $check = $args->{_ansible_check_mode};
-  set_log_level($args->{_ansible_verbosity} || 0);
 
   my $lookup = $args->{lookup};
   my ($objs, @objs) = match_objects($args, $lookup);

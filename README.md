@@ -17,7 +17,7 @@ Requirements:
 
 * [Warewulf](http://warewulf.lbl.gov/trac), with properly configured and populated database
 * Run ansible (or, in the case of the module, remotely) on the Warewulf host
-* Perl JSON module
+* Perl modules: JSON, List::MoreUtils
 
 ## Dynamic inventory
 
@@ -80,8 +80,8 @@ Generally this corresponds to the `wwsh` interface.
    * postnetdown=BOOL
    * preshell=BOOL
    * postshell=BOOL
-   * selinux=STR
-   * bootlocal=NORMAL|EXIT
+   * selinux=DISABLED|ENABLED|ENFORCED
+   * bootlocal=UNDEF|NORMAL|EXIT
    * ipmi_ipaddr=STR
    * ipmi_netmask=STR
    * ipmi_username=STR
