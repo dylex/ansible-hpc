@@ -1,4 +1,4 @@
-#!/usr/bin/perl -Tw
+#!/usr/bin/perl -w
 # WANT_JSON
 # Ansible module or dynamic inventory for warewulf.
 
@@ -28,17 +28,13 @@ sub data_eq($$) {
   Dumper($a) eq Dumper($b)
 }
 
-my $JSON = JSON->new->utf8->allow_blessed->convert_blessed->allow_unknown;
-$JSON = $JSON->pretty if -t STDOUT;
-
-my $DS = Warewulf::DataStore->new();
-
 sub elem($@) {
   my $e = shift;
   grep { $_ eq $e } @_
 }
 
-my %RES = ();
+my $JSON = JSON->new->utf8->allow_blessed->convert_blessed->allow_unknown;
+$JSON = $JSON->pretty if -t STDOUT;
 
 sub read_json {
   local $/;
@@ -114,7 +110,7 @@ sub prop_adddel {
   $base .= 's';
   my $sense = $addrm eq 'add';
   my @cur = $obj->$base;
-  return unless $sense xor grep { $sense xor elem($_, @cur) } @val;
+  return unless grep { $sense xor elem($_, @cur) } @val;
   return $check if $check;
   $obj->$prop(@val) || JSON::true
 }
@@ -190,7 +186,7 @@ my %PROPS = (
     preshell		=> \&prop,
     postshell		=> \&prop,
     selinux		=> \&prop,
-    bootlocal		=> \&prop,
+    bootlocal		=> \&prop, # TODO current value translation
     # Impi:
     ipmi_ipaddr		=> \&prop,
     ipmi_netmask	=> \&prop,
@@ -274,6 +270,8 @@ sub pxe($$$) {
   Warewulf::Provision::Pxelinux->new->$op($obj->get_list) || JSON::true
 }
 
+my $DS = Warewulf::DataStore->new();
+
 sub match_objects($;$$) {
   my ($match, $field, $action) = @_;
   $field ||= 'name';
@@ -321,6 +319,8 @@ sub obj_groups($) {
   wantarray ? @groups : \@groups
 }
 
+
+my %RES = ();
 
 if      (@ARGV == 1 and $ARGV[0] eq '--list') {
   my ($objs, @objs) = inventory_objects;
