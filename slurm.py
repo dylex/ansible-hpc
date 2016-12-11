@@ -1,6 +1,51 @@
 #!/usr/bin/python
 # WANT_JSON
 
+DOCUMENTATION = """
+---
+module: slurm
+short_description: Manage slurm clusters
+author: Dylan Simon (@dylex)
+description:
+    - Provide an interface to sacctmgr, mostly mirrors the command-line interface
+options:
+    state:
+        description:
+            - The action to take, either add/modify, delete, or list.
+            - Equivalent to the first argument to sacctmgr.
+        choices: ["present", "absent", "list"]
+        default: present or list
+    entity:
+        description:
+            - The type of entity to list or modify.
+            - Equivalent to the second argument to sacctmgr.
+            - To manipulate associations, specify "parent=" with account, "account=" with user, "cluster=" with resource, or "account=" with transactions.
+        required: true
+        choices: ["cluster", "qos", "resource", "account", "user", "events", "reservation", "transactions", "tres", "wckey"]
+    name:
+        description:
+            - The name of the entity to modify, for cluster, qos, resource, account, user, reservation, tres, or wckey
+        required: for state=present,absent
+    *:
+        description:
+            - Other arguments are the same as to sacctmgr, except all are lower-case.
+            - Rather than WithClusters or WithAssoc, if you specify "parent=", "account=", or "cluster=" they will be inferred.
+        required: false
+"""
+
+EXAMPLES = """
+- name: create slurm user
+  hosts: slurm
+  slurm: entity=user state=present name={{user}} account={{slurm_account}}
+"""
+
+RETURN = """
+entity_type:
+    description: the list of matching entities, before any actions are taken
+    type: list
+    returned: always
+"""
+
 from ansible.module_utils.basic import AnsibleModule
 
 """

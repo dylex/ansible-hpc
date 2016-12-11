@@ -1,6 +1,8 @@
-# Ansible module and inventory for Warewulf systems manager
+# Ansible utilities useful for HPC clusters
 
-The perl script `warewulf.pl` can be used an an ansible module as well as a dynamic inventory.
+## Module and inventory for Warewulf systems manager
+
+The perl script `warewulf.pl` can be used as an ansible module as well as a dynamic inventory.
 To use it, pass it to ansible's `-M` (library) and/or `-i` (inventory) arguments, or place it in the corresponding directories.
 
 Example:
@@ -19,7 +21,7 @@ Requirements:
 * Run ansible (or, in the case of the module, remotely) on the Warewulf host
 * Perl modules: JSON, List::MoreUtils
 
-## Dynamic inventory
+### Dynamic inventory
 
 When used as a dynamic inventory script (i.e., called with `--list` or `--host HOST`), `warewulf.pl` generates a list of hosts based on Warewulf's node database and vnfs list.
 
@@ -36,13 +38,13 @@ It provides the following host variables:
 * warewulf_domain
 * warewulf_netdevs: one key per interface, each with all defined values
 
-### Alternate Haskell version
+#### Alternate Haskell version
 
 There is also a Haskell application that provides equivalent dynamic inventory functionality.
 It gets information from "wwsh node print" and "wwsh vnfs list", but otherwise behaves similarly to the perl version.
 There is probably no reason to use it.
 
-## Module
+### Module
 
 As a module, `warewulf.pl` allows various interactions with the warewulf database.
 You must pass one of the search arguments (`node`, `vnfs`, `bootstrap`, `file`) to specify which objects to operate on.
@@ -160,3 +162,9 @@ For example, `warewulf node=node01 get=1` may return:
 ```
 
 Since this module expects to run on the Warewulf server, often it should be used with `local_action` delegation.
+
+## Module for Slurm workload manager
+
+The python script `slurm.py` provides an interface to [Slurm](https://slurm.schedmd.com/).
+Currently it provides an interface to `sacctmgr` functionality to manage users and accounts.
+See the documentation within the module.
