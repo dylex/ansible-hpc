@@ -373,7 +373,7 @@ if      (@ARGV == 1 and $ARGV[0] eq '--list') {
   die "No matching host: $host\n" unless @objs;
   die "Multiple matching hosts: $host\n" if $#objs;
   my ($obj) = @objs;
-  %RES = host_vars($obj);
+  %RES = obj_vars($obj);
 
 } elsif (@ARGV == 1 and -r $ARGV[0]) {
   my $args = read_json(@ARGV);
