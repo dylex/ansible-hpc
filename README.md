@@ -75,6 +75,9 @@ Generally this corresponds to the `wwsh` interface.
    * fileids=LIST
    * fileidadd=LIST
    * fileiddel=LIST
+   * files=LIST
+   * fileadd=LIST
+   * filedel=LIST
    * console=STR
    * kargs=LIST
    * pxelinux=STR

@@ -208,11 +208,14 @@ my %PROPS = (
     bootstrapid 	=> \&prop,
     vnfsid		=> \&prop,
     fileids 		=> \&prop_list,
+    files 		=> \&resolve_fileids,
     console 		=> \&prop,
     kargs 		=> \&prop_list,
     pxelinux 		=> \&prop,
     fileidadd		=> \&prop_adddel,
     fileiddel		=> \&prop_adddel,
+    fileadd		=> \&resolve_fileids,
+    filedel		=> \&resolve_fileids,
     master		=> \&prop_list,
     postnetdown		=> \&prop_bool,
     preshell		=> \&prop_bool,
@@ -303,6 +306,21 @@ sub pxe($$$) {
 }
 
 my $DS = Warewulf::DataStore->new();
+
+sub resolve_ids {
+  my ($type, $lookup, $obj, $prop, $args, $check) = @_;
+  my @val = to_array($args->{$prop});
+  $prop =~ s/^$type/${type}id/
+    or die "invalid resolve_${type}ids $prop";
+  $args->{$prop} = [ map { $_->id() } 
+    map { $DS->get_objects($type, $lookup, $_)->get_list() } @val
+  ];
+  return $PROPS{$obj->get('_type')}->{$prop}->($obj, $prop, $args, $check);
+}
+
+sub resolve_fileids {
+  return resolve_ids("file", "name", @_);
+}
 
 sub match_objects($;$$) {
   my ($match, $field, $action) = @_;
