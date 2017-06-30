@@ -322,7 +322,7 @@ class SAcctMgr(object):
             check_invalid_arguments = False,
             supports_check_mode = True
         )
-        self.bin = self.module.get_bin_path('sacctmgr', True, ['/opt/slurm/bin'])
+        self.bin = self.module.get_bin_path('sacctmgr', True, ['/opt/slurm/bin', '/cm/shared/apps/slurm/current/bin'])
         self.params = self.module.params
         self.entity = self.params.pop('entity')
 
