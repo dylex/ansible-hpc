@@ -196,7 +196,7 @@ class Key(RF):
             sacctmgr.fail('missing required argument: %s' % self.name)
 
 class RW(Fmt):
-    """Parameter than can be read and modified"""
+    """Parameter that can be read and modified"""
     def editable(self):
         return True
 
@@ -204,9 +204,10 @@ class RW(Fmt):
         return self.val == val
 
     def parse(self, sacctmgr):
-        if sacctmgr.state != 'present':
-            return
-        Fmt.parse(self, sacctmgr)
+        if sacctmgr.state == 'present':
+            Fmt.parse(self, sacctmgr)
+        elif sacctmgr.state == 'absent':
+            sacctmgr.params.pop(self.name, None)
 
     def sets(self, sacctmgr):
         if self.val is None:
@@ -216,11 +217,12 @@ class RW(Fmt):
             self.set(sacctmgr)
 
 class Act(Param):
-    """Parameter than causes an action"""
+    """Parameter that causes an action"""
     def parse(self, sacctmgr):
-        if sacctmgr.state != 'present':
-            return
-        Param.parse(self, sacctmgr)
+        if sacctmgr.state == 'present':
+            Param.parse(self, sacctmgr)
+        elif sacctmgr.state == 'absent':
+            sacctmgr.params.pop(self.name, None)
 
     def sets(self, sacctmgr):
         if self.val is None:
