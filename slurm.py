@@ -1,5 +1,10 @@
 #!/usr/bin/python
-# WANT_JSON
+
+ANSIBLE_METADATA = {
+    'metadata_version': '1.1',
+    'status': ['preview'],
+    'supported_by': 'community'
+}
 
 DOCUMENTATION = """
 ---
@@ -25,8 +30,7 @@ options:
     name:
         description:
             - The name of the entity to modify, for cluster, qos, resource, account, user, reservation, tres, or wckey
-        required: for state=present,absent
-    *:
+    OTHERS:
         description:
             - Other arguments are the same as to sacctmgr, except all are lower-case.
             - Rather than WithClusters or WithAssoc, if you specify "parent=", "account=", or "cluster=" they will be inferred.
@@ -178,6 +182,7 @@ class Filt(Param):
     def parse(self, sacctmgr):
         Param.parse(self, sacctmgr)
         if self.val:
+            sacctmgr.keys.append(self.fmt)
             sacctmgr.filter.add(self.name, self.val)
 
 class RF(RO, Filt):
@@ -215,6 +220,10 @@ class RW(Fmt):
         cur = self.cur(sacctmgr)
         if not cur or not all(map(self.eq, cur)):
             self.set(sacctmgr)
+
+class RWSet(RW):
+    def eq(self, val):
+        return set(self.val.split(',')) == set(val.split(','))
 
 class Act(Param):
     """Parameter that causes an action"""
@@ -258,6 +267,7 @@ class With(Parser):
         self.sub = List(*l)
 
     def parse(self, sacctmgr):
+        self.key.format(sacctmgr)
         self.key.parse(sacctmgr)
         if self.key.val is not None:
             sacctmgr.args.append(self.args)
@@ -299,7 +309,7 @@ ENTITIES = dict(
         Opt('WithDeleted')),
     user            = List(Key('Name', 'User'),
         RW('DefaultAccount'), RW('AdminLevel'),
-        With('WithAssoc', RF('Account'), RF('Cluster'), RF('Partition'), RW('DefaultQOS'), RW('DefaultWCKey'), RW('QosLevel'), RW('Fairshare'), RW('MaxTRESMins'), RW('MaxTRES'), RW('MaxJobs'), RW('MaxNodes'), RW('MaxSubmitJobs'), RW('MaxWall'),
+        With('WithAssoc', RF('Account'), RF('Cluster'), RF('Partition'), RW('DefaultQOS'), RW('DefaultWCKey'), RWSet('QosLevel'), RW('Fairshare'), RW('MaxTRESMins'), RW('MaxTRES'), RW('MaxJobs'), RW('MaxNodes'), RW('MaxSubmitJobs'), RW('MaxWall'),
             Act('RawUsage')),
         Opt('WithDeleted')),
     events          = List(RF('Cluster'), RF('Nodes', 'ClusterNodes'), RF('Start'), RF('End'), RF('State'), RF('Reason'), RF('User'), RF('Event'), RO('CPUCount'), RO('Duration'),
@@ -330,6 +340,7 @@ class SAcctMgr(object):
 
         self.result = {}
         self.format = []
+        self.keys = []
         self.filter = Args()
         self.args = Args()
         self.sets = Args()
@@ -370,7 +381,8 @@ class SAcctMgr(object):
         n = len(self.format)
         if any(len(r) != n for r in l):
             self.fail('unexpected list output for %s' % self.entity)
-        return [dict(zip(self.format, r)) for r in l]
+        #return list(filter(lambda d: all(d[k] for k in self.keys), map(lambda r: dict(zip(self.format, r)), l)))
+        return [d for d in (dict(zip(self.format, r)) for r in l) if all(d[k] for k in self.keys)]
 
     def create(self):
         cmd = ['add', self.entity] + self.filter + self.sets
