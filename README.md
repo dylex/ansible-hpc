@@ -168,6 +168,10 @@ Since this module expects to run on the Warewulf server, often it should be used
 
 ## Module for Slurm workload manager
 
-The python script `slurm.py` provides an interface to [Slurm](https://slurm.schedmd.com/).
+The python module `slurm.py` provides an interface to [Slurm](https://slurm.schedmd.com/).
 Currently it provides an interface to `sacctmgr` functionality to manage users and accounts.
 See the documentation within the module.
+
+## Module for Bright Cluster module
+
+The python module `bright.py` provides an interface to [Bright Cluster Manager](https://www.brightcomputing.com/documentation) configuration.
