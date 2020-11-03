@@ -19,6 +19,7 @@ description:
 notes:
   - This was created mainly to manage Slurm configuration in Bright 9.0, and has been tested mainly for those types of entities, but should theoretically work for almost any Bright settings.  It uses the C(pythoncm) Bright interface, so see the Bright Developer documentation for naming and typing conventions.
   - You will likely have to set C(ansible_python_interpreter=/cm/local/apps/python3/bin/python3) if running this on a bright node.
+  - Since bright is picky about types, if you use templates to set values, you may want to set the ansible configuration C(jinja2_native) to preserve types.
 author:
   - Dylan Simon (@dylex)
 requirements:
@@ -152,6 +153,9 @@ class Entity(object):
         if not r.success:
             self.result['failed'] = True
 
+    def gettype(self, typ):
+        return getattr(pythoncm.entity, typ)
+
     def getentity(self, name, typ):
         e = self.cluster.get_by_name(name, typ)
         if not e:
@@ -174,7 +178,7 @@ class Entity(object):
             if type(val) is not dict:
                 raise TypeError('Expected %s attributes, not %r'%(field.instance, val))
             if not cur:
-                cur = getattr(pythoncm.entity, val.get('childType', val.get('baseType', field.instance)))(cluster = self.cluster)
+                cur = self.gettype(val.get('childType', val.get('baseType', field.instance)))(cluster = self.cluster)
                 self.changed.add(cur)
                 if name and hasattr(cur, 'name'):
                     cur.name = name
@@ -200,6 +204,12 @@ class Entity(object):
                                 l.append(None)
                             l[i] = self.makeentity(l[i], e, f, n)
                         v = l
+                    elif type(v) is str and issubclass(self.gettype(f.instance), pythoncm.entity.Device):
+                        from pythoncm.device_selection import DeviceSelection
+                        d = DeviceSelection(self.cluster)
+                        #d.add_devices_in_text_range(v, True)
+                        d.add_devices(pythoncm.namerange.expand.Expand.expand(v), True)
+                        v = d.get_sorted_by_name()
                     else:
                         raise TypeError('%s: expected %s list'%(k, f.instance))
                 else:
@@ -218,7 +228,7 @@ class Entity(object):
                 clone = self.getentity(self.clone, self.type)
                 self.entity = clone.clone()
             else:
-                self.entity = getattr(pythoncm.entity, self.type)(cluster = self.cluster)
+                self.entity = self.gettype(self.type)(cluster = self.cluster)
             self.changed.add(self.entity)
             if hasattr(self.entity, 'name'):
                 self.entity.name = self.name
