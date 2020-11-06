@@ -30,17 +30,48 @@ options:
     name:
         description:
             - The name of the entity to modify, for cluster, qos, resource, account, user, reservation, tres, or wckey
-    OTHERS:
+        required: false
+    args:
+        type: dict
         description:
             - Other arguments are the same as to sacctmgr, except all are lower-case.
             - Rather than WithClusters or WithAssoc, if you specify "parent=", "account=", or "cluster=" they will be inferred.
-        required: false
+            - For some arguments, sacctmgr may report values in a different format than it accepts them.  In this case, you can specify a dict with C(set) as the value to set, and C(test) as the value to compare against.
+            - For TRES values, like sacctmgr, you must explicitly set C(res=-1) to clear resource contraints.  These will be ignored when comparing.
 """
 
 EXAMPLES = """
-- name: create slurm user
+- name: create slurm qos
   hosts: slurm
-  slurm: entity=user state=present name={{user}} account={{slurm_account}}
+  slurm:
+    entity: qos
+    state: present
+    name: defq
+    args:
+      priority: 10
+      maxwall: 7-00:00:00
+      grptres: node=1000,mem=10000000M
+      maxtresperuser: cpu=1000,node=-1
+      gracetime:
+        set: 60
+        test: 00:01:00
+
+- name: list all user associations
+  hosts: slurm
+  slurm:
+    entity: user
+    state: list
+    args:
+      account: ''
+
+- name: create slurm user association
+  hosts: slurm
+  slurm:
+    entity: user
+    state: present
+    name: {{user}}
+    args:
+      account: {{slurm_account}}
 """
 
 RETURN = """
@@ -52,86 +83,10 @@ entity_type:
 
 from ansible.module_utils.basic import AnsibleModule
 
-"""
-sacctmgr commands:
-
-             Format= Cluster ClusterNodes Start End State Reason  User  Event  CPUCount Duration
-list events        - Clusters= Nodes= Start= End= States= Reason= User= Event= MaxCPUs= MinCPUs=
-                     All_Clusters All_Time
-             Format= Cluster  Name TRES Start End ID
-list reservation   - Cluster= Name= Start= End= ID= Nodes=
-                                                                        WithAssoc
-             Format= Time        Action  Actor Where Info Clusster  ID  Account  User
-list transactions  - Start= End= Action= Actor=           Clusters= ID= Account= User=
-             Format= Name  Type  ID
-list tres          - Name= Type= ID=
-                     WithDeleted
-             Format= Name  Cluster  User  ID
-list wckey         - Name= Cluster= User= ID= End= Start=
-                     WithDeleted
-
-             Format= Name  Classification  DefaultQOS  Flags  RPC                    QosLevel  Fairshare                                              GrpTRES  GrpJobs  GrpMemory  GrpNodes  GrpSubmitJob           MaxTRESMins            MaxJobs  MaxNodes  MaxSubmitJobs  MaxWall
-add cluster        - Name=                 DefaultQOS=                               QosLevel= Fairshare=                                             GrpTRES= GrpJobs= GrpMemory= GrpNodes= GrpSubmitJob=          MaxTRESMins=           MaxJobs= MaxNodes= MaxSubmitJobs= MaxWall=
-modify cluster     -                       DefaultQOS=                               QosLevel= Fairshare=                                             GrpTRES= GrpJobs= GrpMemory= GrpNodes= GrpSubmitJob=          MaxTRESMins=           MaxJobs= MaxNodes= MaxSubmitJobs= MaxWall=
-     (where options) Name= Classification=             Flags= 
-delete cluster     - Name= Classification= DefaultQOS= Flags= 
-list cluster       - Name= Classification= DefaultQOS= Flags= RPC=
-                     WOLimits
-
-             Format= Name  Description   Id  PreemptMode  Flags  GraceTime  GrpJobs  GrpSubmitJob          GrpTRESMins                                GrpTRES  GrpWall  MaxTRESMins  MaxTRESPerJob  MaxTRESPerNode  MaxTRESPerUser  MaxJobs  MaxSubmitJobsPerUser  MaxWall  Preempt  Priority  UsageFactor  UsageThreshold
-add qos            - Name= Description=      PreemptMode= Flags= GraceTime= GrpJobs= GrpSubmitJob=         GrpTRESMins=                               GrpTRES= GrpWall= MaxTRESMins= MaxTRESPerJob= MaxTRESPerNode= MaxTRESPerUser= MaxJobs= MaxSubmitJobsPerUser= MaxWall= Preempt= Priority= UsageFactor= UsageThreshold=
-modify qos         - Name= Description=      PreemptMode= Flags= GraceTime= GrpJobs= GrpSubmitJob=         GrpTRESMins=                               GrpTRES= GrpWall= MaxTRESMins= MaxTRESPerJob= MaxTRESPerNode= MaxTRESPerUser= MaxJobs= MaxSubmitJobsPerUser= MaxWall= Preempt= Priority= UsageFactor= UsageThreshold= RawUsage=
-     (where options) Name= Descriptions= ID= PreemptMode=
-delete qos         - Name= Descriptions= ID= PreemptMode=
-list qos           - Name= Descriptions= Id= PreemptMode=
-                     WithDeleted
-
-                                                                                               WithClusters
-             Format= Name  Description  Count  Flags  Id  ServerType  Server  Type             Clusters  Allocated       
-add resource       - Name= Description= Count= Flags=     ServerType= Server= Type=            Clusters= PercentAllowed= 
-modify resource    -                    Count= Flags=                                 Manager=           PercentAllowed= 
-     (where options) Name=                                            Server=                  Clusters=                 
-delete resource    - Name=                                                                     Clusters= 
-list resource      - Name= Description=        Flags= Id= ServerType= Server=                  Clusters= PercentAllowed= 
-
-                                                      WithAssoc
-             Format= Name  Description  Organization  ParentName User  Clusters  DefaultQOS         QOSLevel  Fairshare  GrpTRESMins  GrpTRESRunMins  GrpTRES  GrpJobs  GrpMemory  GrpNodes  GrpSubmitJob  GrpWall  MaxTRESMins  MaxTRES  MaxJobs  MaxNodes  MaxSubmitJobs  MaxWall
-add account        - Name= Description= Organization= Parent=          Clusters= DefaultQOS=        QosLevel= Fairshare= GrpTRESMins=                 GrpTRES= GrpJobs= GrpMemory= GrpNodes= GrpSubmitJob= GrpWall= MaxTRESMins= MaxTRES= MaxJobs= MaxNodes= MaxSubmitJobs= MaxWall=
-modify account     - Name= Description= Organization= Parent=                    DefaultQOS=        QosLevel= Fairshare= GrpTRESMins= GrpTRESRunMins= GrpTRES= GrpJobs= GrpMemory= GrpNodes= GrpSubmitJob= GrpWall= MaxTRESMins= MaxTRES= MaxJobs= MaxNodes= MaxSubmitJobs= MaxWall= RawUsage=
-     (where options) Name= Description= Organization= Parent=    User= Clusters= DefaultQOS=        QosLevel=
-delete account     - Name= Description= Organization= Parent=          Clusters= DefaultQOS= 
-list account       - Name= Description= Organization= Parent=                                
-                     WithDeleted WithCoordinators WithRawQOS WOPLimits
-
-                                                       WithAssoc
-             Format= Name  DefaultAccount  AdminLevel  Account  Clusters  Partition  DefaultQOS  DefaultWCKey  QosLevel  Fairshare                                                                                             MaxTRESMins  MaxTRES  MaxJobs  MaxNodes  MaxSubmitJobs  MaxWall 
-add user           - Name= DefaultAccount= AdminLevel= Account= Clusters= Partition= DefaultQOS= DefaultWCKey= QosLevel= Fairshare=                                                                                            MaxTRESMins= MaxTRES= MaxJobs= MaxNodes= MaxSubmitJobs= MaxWall=
-modify user        -       DefaultAccount= AdminLevel=                               DefaultQOS= DefaultWCKey= QosLevel= Fairshare=                                                                                            MaxTRESMins= MaxTRES= MaxJobs= MaxNodes= MaxSubmitJobs= MaxWall= RawUsage= 
-     (where options) Name= DefaultAccount= AdminLevel= Account= Clusters= Partition=                           QosLevel=                                                                                                                                                                       
-delete user        - Name= DefaultAccount= AdminLevel= Account= Clusters=                        DefaultWCKey= 
-list user          - Name= DefaultAccount= AdminLevel=                                           DefaultWCKey= QosLevel=
-                     WithCoordinators WithDeleted WithRawQOS WOPLimits
-
-not yet implemented:
-
-list runawayjobs   - None, strange header
-modify job         - DerivedExitCode= Comment=
-     (where options) JobID= Cluster=
-
-add coordinator    - Accounts= Names=
-delete coordinator - Accounts= Names=
-
-list associations  - Accounts= Clusters= ID= OnlyDefaults Partitions= Parent= Tree Users=
-                     Format= WithSubAccounts WithDeleted WOLimits WOPInfo WOPLimits
-
-archive dump       - Directory= Events Jobs PurgeEventAfter= PurgeJobAfter= PurgeStepAfter= PurgeSuspendAfter= Script= Steps Suspend
-archive load       - File= or Insert=
-"""
-
 class Args(list):
     """A special list for slurm command line key=value arguments."""
     def add(self, field, value=None):
-        self.append(field + '=' + value if value else field)
+        self.append(field + ('=' + str(value) if value is not None else ''))
 
 class Parser(object):
     """Generic argument parser"""
@@ -155,20 +110,20 @@ class Param(Parser):
     def parse(self, sacctmgr):
         self.val = sacctmgr.params.pop(self.name, None)
 
-    def set(self, sacctmgr):
-        sacctmgr.sets.add(self.name, self.val)
+    def set(self, sacctmgr, val):
+        sacctmgr.sets.add(self.name, val)
 
 class Fmt(Param):
     """Parameter that can also be read"""
     def __init__(self, name, fmt=None):
-        Param.__init__(self, name)
+        super(Fmt, self).__init__(name)
         self.fmt = fmt.lower() if fmt else self.name
 
     def format(self, sacctmgr):
         sacctmgr.format.append(self.fmt)
 
     def parse(self, sacctmgr):
-        Param.parse(self, sacctmgr)
+        super(Fmt, self).parse(sacctmgr)
 
     def cur(self, sacctmgr):
         return [r[self.name] for r in sacctmgr.cur]
@@ -180,7 +135,7 @@ class RO(Fmt):
 class Filt(Param):
     """Parameter that can only filter results"""
     def parse(self, sacctmgr):
-        Param.parse(self, sacctmgr)
+        super(Filt, self).parse(sacctmgr)
         if self.val:
             sacctmgr.keys.append(self.fmt)
             sacctmgr.filter.add(self.name, self.val)
@@ -188,7 +143,7 @@ class Filt(Param):
 class RF(RO, Filt):
     """Parameter that can read and filter results"""
     def parse(self, sacctmgr):
-        Filt.parse(self, sacctmgr)
+        super(RF, self).parse(sacctmgr)
 
 class Key(RF):
     """Required, primary key parameter"""
@@ -196,7 +151,7 @@ class Key(RF):
         return True
 
     def parse(self, sacctmgr):
-        RF.parse(self, sacctmgr)
+        super(Key, self).parse(sacctmgr)
         if not self.val and sacctmgr.state != 'list':
             sacctmgr.fail('missing required argument: %s' % self.name)
 
@@ -206,30 +161,43 @@ class RW(Fmt):
         return True
 
     def eq(self, val):
-        return self.val == val
+        return str(self.val) == val
 
     def parse(self, sacctmgr):
         if sacctmgr.state == 'present':
-            Fmt.parse(self, sacctmgr)
+            super(RW, self).parse(sacctmgr)
+            if type(self.val) is dict:
+                self.set_val = self.val['set']
+                self.val = self.val['test']
+            else:
+                self.set_val = self.val
         elif sacctmgr.state == 'absent':
             sacctmgr.params.pop(self.name, None)
 
     def sets(self, sacctmgr):
-        if self.val is None:
+        if self.set_val is None:
             return
         cur = self.cur(sacctmgr)
         if not cur or not all(map(self.eq, cur)):
-            self.set(sacctmgr)
+            self.set(sacctmgr, self.set_val)
 
 class RWSet(RW):
     def eq(self, val):
         return set(self.val.split(',')) == set(val.split(','))
 
+class TRES(RWSet):
+    def parse(self, sacctmgr):
+        super(TRES, self).parse(sacctmgr)
+        try:
+            self.val = ','.join(v for v in self.val.split(',') if not v.endswith('=-1'))
+        except AttributeError:
+            pass
+
 class Act(Param):
     """Parameter that causes an action"""
     def parse(self, sacctmgr):
         if sacctmgr.state == 'present':
-            Param.parse(self, sacctmgr)
+            super(Act, self).parse(sacctmgr)
         elif sacctmgr.state == 'absent':
             sacctmgr.params.pop(self.name, None)
 
@@ -237,7 +205,7 @@ class Act(Param):
         if self.val is None:
             return
         if sacctmgr.cur:
-            self.set(sacctmgr)
+            self.set(sacctmgr, self.val)
 
 class List(Parser):
     """Set of parameters"""
@@ -283,7 +251,7 @@ class Opt(Param):
     def parse(self, sacctmgr):
         if sacctmgr.state != 'list':
             return
-        Param.parse(self, sacctmgr)
+        super(Opt, self).parse(sacctmgr)
         if self.val is None:
             return
         try:
@@ -295,21 +263,22 @@ class Opt(Param):
 
 ENTITIES = dict(
     cluster         = List(Key('Name', 'Cluster'), RF('Classification'),
-        RW('DefaultQOS'), RO('Flags'), RO('RPC'), RW('QosLevel'), RW('Fairshare'), RW('GrpTRES'), RW('GrpJobs'), RW('GrpMemory'), RW('GrpNodes'), RW('GrpSubmitJob'), RW('MaxTRESMins'), RW('MaxJobs'), RW('MaxNodes'), RW('MaxSubmitJobs'), RW('MaxWall')),
+        RW('DefaultQOS'), RO('Flags'), RO('RPC'), RW('QosLevel'), RW('Fairshare'), TRES('GrpTRES'), RW('GrpJobs'), RW('GrpMemory'), RW('GrpNodes'), RW('GrpSubmitJob'), RW('MaxTRESMins'), RW('MaxJobs'), RW('MaxNodes'), RW('MaxSubmitJobs'), RW('MaxWall')),
     qos             = List(Key('Name'),
-        RW('Description'), RO('Id'), RW('PreemptMode'), RW('Flags'), RW('GraceTime'), RW('GrpJobs'), RW('GrpSubmitJob'), RW('GrpTRESMins'), RW('GrpTRES'), RW('GrpWall'), RW('MaxTRESMins'), RW('MaxTRESPerJob'), RW('MaxTRESPerNode'), RW('MaxTRESPerUser'), RW('MaxJobs'), RW('MaxSubmitJobsPerUser'), RW('MaxWall'), RW('Preempt'), RW('Priority'), RW('UsageFactor'), RW('UsageThreshold'),
-        Act('RawUsage'), Opt('WithDeleted')),
+        RW('Description'), RO('Id'), RW('PreemptMode'), RW('Flags'), RW('GraceTime'), RW('GrpJobs'), RW('GrpSubmitJob'), RW('GrpTRESMins'), TRES('GrpTRES'), RW('GrpWall'), RW('MaxTRESMins'), TRES('MaxTRESPerJob'), TRES('MaxTRESPerNode'), TRES('MaxTRESPerUser'), RW('MaxJobs'), RW('MaxSubmitJobsPerUser'), RW('MaxWall'), RW('Preempt'), RW('Priority'), RW('UsageFactor'), RW('UsageThreshold'),
+        Act('RawUsage'), Opt('WithDeleted'),
+        TRES('MaxTRES'), RW('MaxJobsPerUser'), TRES('MinTRESPerJob')),
     resource        = List(Key('Name'),
         RW('Description'), RW('Count'), RW('Flags'), RO('Id'), RW('ServerType'), RW('Server'), RW('Type'),
         With('WithClusters', RF('Cluster'), RW('PercentAllowed', 'Allocated'))),
     account         = List(Key('Name', 'Account'),
         RW('Description'), RW('Organization'),
-        With('WithAssoc', RF('Parent', 'ParentName'), RF('Cluster'), RW('DefaultQOS'), RW('QOSLevel'), RW('Fairshare'), RW('GrpTRESMins'), RW('GrpTRESRunMins'), RW('GrpTRES'), RW('GrpJobs'), RW('GrpMemory'), RW('GrpNodes'), RW('GrpSubmitJob'), RW('GrpWall'), RW('MaxTRESMins'), RW('MaxTRES'), RW('MaxJobs'), RW('MaxNodes'), RW('MaxSubmitJobs'), RW('MaxWall'),
+        With('WithAssoc', RF('Parent', 'ParentName'), RF('Cluster'), RW('DefaultQOS'), RW('QOSLevel'), RW('Fairshare'), RW('GrpTRESMins'), RW('GrpTRESRunMins'), TRES('GrpTRES'), RW('GrpJobs'), RW('GrpMemory'), RW('GrpNodes'), RW('GrpSubmitJob'), RW('GrpWall'), RW('MaxTRESMins'), TRES('MaxTRES'), RW('MaxJobs'), RW('MaxNodes'), RW('MaxSubmitJobs'), RW('MaxWall'),
             Act('RawUsage')),
         Opt('WithDeleted')),
     user            = List(Key('Name', 'User'),
         RW('DefaultAccount'), RW('AdminLevel'),
-        With('WithAssoc', RF('Account'), RF('Cluster'), RF('Partition'), RW('DefaultQOS'), RW('DefaultWCKey'), RWSet('QosLevel'), RW('Fairshare'), RW('MaxTRESMins'), RW('MaxTRES'), RW('MaxJobs'), RW('MaxNodes'), RW('MaxSubmitJobs'), RW('MaxWall'),
+        With('WithAssoc', RF('Account'), RF('Cluster'), RF('Partition'), RW('DefaultQOS'), RW('DefaultWCKey'), RWSet('QosLevel'), RW('Fairshare'), RW('MaxTRESMins'), TRES('MaxTRES'), RW('MaxJobs'), RW('MaxNodes'), RW('MaxSubmitJobs'), RW('MaxWall'),
             Act('RawUsage')),
         Opt('WithDeleted')),
     events          = List(RF('Cluster'), RF('Nodes', 'ClusterNodes'), RF('Start'), RF('End'), RF('State'), RF('Reason'), RF('User'), RF('Event'), RO('CPUCount'), RO('Duration'),
@@ -330,13 +299,18 @@ class SAcctMgr(object):
             argument_spec = dict(
                 state = dict(choices=['present', 'absent', 'list']),
                 entity = dict(required=True, choices=ENTITIES.keys()),
+                name = dict(type='str'),
+                args = dict(type='dict', default={}),
             ),
-            check_invalid_arguments = False,
             supports_check_mode = True
         )
         self.bin = self.module.get_bin_path('sacctmgr', True, ['/opt/slurm/bin', '/cm/shared/apps/slurm/current/bin'])
-        self.params = self.module.params
-        self.entity = self.params.pop('entity')
+        self.entity = self.module.params['entity']
+        self.params = self.module.params['args']
+        try:
+            self.params['name'] = self.module.params['name']
+        except KeyError:
+            pass
 
         self.result = {}
         self.format = []
@@ -399,7 +373,7 @@ class SAcctMgr(object):
     def main(self):
         parser = ENTITIES[self.entity]
         editable = parser.editable()
-        self.state = self.params.pop('state', None) or ('present' if editable else 'list')
+        self.state = self.module.params.get('state') or ('present' if editable else 'list')
         if not editable and self.state != 'list':
             self.fail('cannot set state=%s for %s' % (self.state, self.entity))
         parser.format(self)
