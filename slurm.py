@@ -285,7 +285,7 @@ ENTITIES = dict(
         Filt('Start'), Filt('End'), Filt('MaxCPUs'), Filt('MinCPUs'), Opt('All_Clusters'), Opt('All_Time')),
     reservation     = List(RF('Name'), RF('Cluster'), RO('TRES'), RF('Start'), RF('End'), RF('ID'),
         Filt('Nodes')),
-    transactions    = List(RO('Time'), RF('Action'), RF('Actor'), RO('Where'), RO('Info'), RF('Clusster'), RF('ID'),
+    transactions    = List(RO('Time'), RF('Action'), RF('Actor'), RO('Where'), RO('Info'), RF('Cluster'), RF('ID'),
         With('WithAssoc', RF('Account'), RF('User'))),
     tres            = List(RF('Name'), RF('Type'), RF('ID'),
         Opt('WithDeleted')),
