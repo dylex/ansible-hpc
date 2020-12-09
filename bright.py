@@ -26,9 +26,10 @@ requirements:
   - pythoncm
 options:
   name:
-    required: true
+    required: false
     description:
       - The name of the entity to be managed.
+      - If omitted, just return a list of entities.
     type: str
   type:
     required: true
@@ -108,6 +109,10 @@ entity:
   description: full entity
   type: dict
   returned: when entity exists at any point
+entities:
+  description: all entries of given type
+  type: list
+  returned: when name is omitted
 """
 
 import traceback
@@ -246,6 +251,9 @@ class Entity(object):
 
     def run(self):
         self.cluster = pythoncm.cluster.Cluster() # TODO: settings
+        if not self.name:
+            l = self.cluster.get_by_type(self.gettype(self.type))
+            return {'entities': [e.to_dict() for e in l]}
         self.entity = self.cluster.get_by_name(self.name, self.type)
 
         self.result = {}
@@ -263,7 +271,7 @@ class Entity(object):
 def main():
     module = AnsibleModule(
         argument_spec=dict(
-            name=dict(type='str', required=True),
+            name=dict(type='str', required=False),
             type=dict(type='str', required=True, choices=Entity.types if HAS_CM else None),
             state=dict(type='str', default='present', choices=['absent','present']),
             clone=dict(type='str'),
