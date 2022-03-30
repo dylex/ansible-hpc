@@ -31,10 +31,14 @@ options:
       - The name of the entity to be managed.
       - If omitted, just return a list of entities.
     type: str
+  key:
+    description:
+      - The uniqueKey of the entity to be managed.
+    type: int
   type:
-    required: true
     description:
       - The type (using the pythoncm CamelCase name) of the entity to be managed, e.g., C(PhysicalNode), C(JobQueue), etc.
+      - Required unless key is specified.  If both key and type are specified, both must match.
   state:
     description: Intended state
     choices: [ absent, present ]
@@ -101,6 +105,10 @@ name:
   description: resolved name of the entity
   type: str
   returned: when entity exists at any point
+key:
+  description: resolved uniqueKey of the entity
+  type: int
+  returned: when entity exists at any point
 type:
   description: specific type of entity
   type: str
@@ -142,6 +150,7 @@ class Entity(object):
         self.module = module
         self.state = module.params['state']
         self.name = module.params['name']
+        self.key = module.params['key']
         self.type = module.params['type']
         self.clone = module.params['clone']
         self.attrs = module.params['attrs']
@@ -169,6 +178,11 @@ class Entity(object):
 
     def makeentity(self, cur, val, field, name=None):
         from pythoncm.entity.meta_data import MetaData
+        try:
+            MetaData = MetaData.Type
+        except AttributeError:
+            pass
+
         if val is None:
             return
 
@@ -247,14 +261,22 @@ class Entity(object):
                 self.result['failed'] = True
                 self.result['msg'] = err
             elif not self.module.check_mode:
-                self.entity.commit()
+                res = self.entity.commit(wait_for_remote_update=True)
+                if not res.good:
+                    self.result['failed'] = True
+                    self.result['msg'] = str(res)
 
     def run(self):
         self.cluster = pythoncm.cluster.Cluster() # TODO: settings
-        if not self.name:
+        if self.key is not None:
+            self.entity = self.cluster.get_by_key(self.key)
+            if self.type and self.entity.baseType != self.type and self.entity.childType != self.type:
+                return {'failed': True, 'msg': 'key/type mismatch'}
+        elif self.name is not None:
+            self.entity = self.cluster.get_by_name(self.name, self.type)
+        else:
             l = self.cluster.get_by_type(self.gettype(self.type))
             return {'entities': [e.to_dict() for e in l]}
-        self.entity = self.cluster.get_by_name(self.name, self.type)
 
         self.result = {}
         try:
@@ -265,18 +287,22 @@ class Entity(object):
         if self.entity:
             self.result['entity'] = self.entity.to_dict()
             self.result['name'] = self.entity.resolve_name
+            self.result['key'] = self.entity.uniqueKey
             self.result['type'] = self.entity.childType or self.entity.baseType
         return self.result
 
 def main():
     module = AnsibleModule(
         argument_spec=dict(
-            name=dict(type='str', required=False),
-            type=dict(type='str', required=True, choices=Entity.types if HAS_CM else None),
+            name=dict(type='str'),
+            key=dict(type='int'),
+            type=dict(type='str', choices=Entity.types if HAS_CM else None),
             state=dict(type='str', default='present', choices=['absent','present']),
             clone=dict(type='str'),
             attrs=dict(type='dict', default={}),
         ),
+        mutually_exclusive=[('name','key')],
+        required_one_of=[('type','key')],
         supports_check_mode=True,
     )
 
