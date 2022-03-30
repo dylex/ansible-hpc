@@ -176,6 +176,11 @@ class Entity(object):
 
     def makeentity(self, cur, val, field, name=None):
         from pythoncm.entity.meta_data import MetaData
+        try:
+            MetaData = MetaData.Type
+        except AttributeError:
+            pass
+
         if val is None:
             return
 
