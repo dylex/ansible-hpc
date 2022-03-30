@@ -267,7 +267,7 @@ ENTITIES = dict(
     qos             = List(Key('Name'),
         RW('Description'), RO('Id'), RW('PreemptMode'), RW('Flags'), RW('GraceTime'), RW('GrpJobs'), RW('GrpSubmitJob'), RW('GrpTRESMins'), TRES('GrpTRES'), RW('GrpWall'), RW('MaxTRESMins'), TRES('MaxTRESPerJob'), TRES('MaxTRESPerNode'), TRES('MaxTRESPerUser'), RW('MaxJobs'), RW('MaxSubmitJobsPerUser'), RW('MaxWall'), RW('Preempt'), RW('Priority'), RW('UsageFactor'), RW('UsageThreshold'),
         Act('RawUsage'), Opt('WithDeleted'),
-        TRES('MaxTRES'), RW('MaxJobsPerUser'), TRES('MinTRESPerJob')),
+        TRES('MaxTRES'), RW('MaxJobsPerUser'), RW('MaxJobsAccruePerUser'), TRES('MinTRESPerJob')),
     resource        = List(Key('Name'),
         RW('Description'), RW('Count'), RW('Flags'), RO('Id'), RW('ServerType'), RW('Server'), RW('Type'),
         With('WithClusters', RF('Cluster'), RW('PercentAllowed', 'Allocated'))),
@@ -379,7 +379,7 @@ class SAcctMgr(object):
         parser.format(self)
         parser.parse(self)
         if self.params:
-            self.fail('unhandled arguments: %s' % ','.join(self.params.iterkeys()))
+            self.fail('unhandled arguments: %s' % ','.join(self.params.keys()))
         self.cur = self.list()
         self.result[self.entity] = self.cur
         if self.state == 'list':
