@@ -229,21 +229,19 @@ class List(Parser):
 
 class With(Parser):
     """Parameters dependent on a With* argument, only supplied if the given key parameter is"""
-    def __init__(self, w, k, *l):
+    def __init__(self, w, *l):
         self.args = w
-        self.key = k
+        self.optlen = len(l)
         self.sub = List(*l)
 
     def parse(self, sacctmgr):
-        self.key.format(sacctmgr)
-        self.key.parse(sacctmgr)
-        if self.key.val is not None:
+        if self.optlen > 0:
             sacctmgr.args.append(self.args)
             self.sub.format(sacctmgr)
             self.sub.parse(sacctmgr)
 
     def sets(self, sacctmgr):
-        if self.key.val is not None:
+        if self.optlen > 0:
             self.sub.sets(sacctmgr)
 
 class Opt(Param):
