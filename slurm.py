@@ -235,9 +235,9 @@ class With(Parser):
         self.sub = List(*l)
 
     def parse(self, sacctmgr):
-        self.key.format(sacctmgr)
         self.key.parse(sacctmgr)
         if self.key.val is not None:
+            self.key.format(sacctmgr)
             sacctmgr.args.append(self.args)
             self.sub.format(sacctmgr)
             self.sub.parse(sacctmgr)
